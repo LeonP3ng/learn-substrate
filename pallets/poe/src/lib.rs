@@ -3,6 +3,12 @@
 // A module for proof of existence
 pub use pallet::*;
 
+#[cfg(test)]
+mod mock;
+#[cfg(test)]
+mod tests;
+
+//定义功能模块
 #[frame_support::pallet]
 pub mod pallet {
     use frame_support::{
@@ -10,18 +16,22 @@ pub mod pallet {
         pallet_prelude::*
     };
     use frame_system::pallet_prelude::*;
-    use sp_std::vec::Vec; // Step 3.1 will include this in `Cargo.toml`
+    use sp_std::vec::Vec; 
+    
+    //定义配置接口
     /// Configure the pallet by specifying the parameters and types on which it depends.
     #[pallet::config]
     pub trait Config: frame_system::Config {
         /// Because this pallet emits events, it depends on the runtime's definition of an event.
         type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+        type ClaimSize: Get<usize>;
     }
 
     #[pallet::pallet]
     #[pallet::generate_store(pub(super) trait Store)]
     pub struct Pallet<T>(_);
     
+    //定义存储单元
     #[pallet::storage]
     #[pallet::getter(fn proofs)]
     pub type Proofs<T: Config> = StorageMap<
@@ -30,7 +40,9 @@ pub mod pallet {
         Vec<u8>, 
         (T::AccountId, T::BlockNumber)
     >;   
-    #[pallet::event]   // <-- Step 3. code block will replace this.
+
+    //定义事件
+    #[pallet::event]
     #[pallet::metadata(T::AccountId = "AccountId")]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config>{
@@ -39,17 +51,20 @@ pub mod pallet {
         ClaimTransferred(T::AccountId, Vec<u8>, T::AccountId),
     }
     
+    //定义错误信息
     #[pallet::error]   // <-- Step 4. code block will replace this.
     pub enum Error<T>{
         ProofAlreadyExist,
         ClaimNotExist,
         NotProofOwner,
+        ClaimSizeTooLarge,
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
     
-    #[pallet::call]   // <-- Step 6. code block will replace this.
+    //定义可调用函数
+    #[pallet::call]
     impl<T: Config> Pallet<T>{
         //创建存证
         #[pallet::weight(0)]
@@ -58,13 +73,12 @@ pub mod pallet {
             claim: Vec<u8>,
         ) -> DispatchResultWithPostInfo {
 
-            // Check that the extrinsic was signed and get the signer.
-            // This function will return an error if the extrinsic is not signed.
-            // https://substrate.dev/docs/en/knowledgebase/runtime/origin
             let sender = ensure_signed(origin)?;
-        
-            // Verify that the specified claim has not already been claimed.         
+             
             ensure!(!Proofs::<T>::contains_key(&claim), Error::<T>::ProofAlreadyExist);
+
+            //检查存证内容大小，是否小于ClaimSize上限
+            ensure!(claim.len() <= T::ClaimSize::get(), Error::<T>::ClaimSizeTooLarge);
 
             // Get the block number from the FRAME System module.
             let current_block = <frame_system::Pallet<T>>::block_number();
@@ -87,13 +101,8 @@ pub mod pallet {
             origin: OriginFor<T>,
             claim: Vec<u8>,
         ) -> DispatchResultWithPostInfo {
-            // Check that the extrinsic was signed and get the signer.
-            // This function will return an error if the extrinsic is not signed.
-            // https://substrate.dev/docs/en/knowledgebase/runtime/origin
+            
             let sender = ensure_signed(origin)?;
-
-            // Verify that the specified proof has been claimed.
-            //ensure!(Proofs::<T>::contains_key(&claim), Error::<T>::ClaimNotExist);
 
             // Get owner of the claim.
             let (owner, _) = Proofs::<T>::get(&claim).ok_or(Error::<T>::ClaimNotExist)?;
